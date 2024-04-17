@@ -13,10 +13,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-    - name: 检查项目分支
-      uses: actions/checkout@main
+      - name: 检查项目分支
+        uses: actions/checkout@main
 
       - name: Init Env
         run: |
