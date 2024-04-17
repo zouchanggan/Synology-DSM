@@ -7,9 +7,8 @@
 
 name: Issues
 on:
-  schedule:
-    - cron: 0 16 * * 5
-  workflow_dispatch:
+  issues:
+    types: [opened, reopened]
 
 jobs:
   build:
