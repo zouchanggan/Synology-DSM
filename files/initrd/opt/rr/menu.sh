@@ -371,8 +371,6 @@ function productversMenu() {
 ###############################################################################
 # Parse Pat
 function ParsePat() {
-  rm -f "${LOG_FILE}"
-
   if [ -n "${MODEL}" -a -n "${PRODUCTVER}" ]; then
     MSG="$(printf "$(TEXT "You have selected the %s and %s.\n'Parse Pat' will overwrite the previous selection.\nDo you want to continue?")" "${MODEL}" "${PRODUCTVER}")"
     DIALOG --title "$(TEXT "Parse Pat")" \
@@ -402,11 +400,12 @@ function ParsePat() {
   fi
 
   while true; do
+    rm -f "${LOG_FILE}"
     echo "$(printf "$(TEXT "Parse %s ...")" "$(basename "${PAT_PATH}")")"
     extractPatFiles "${PAT_PATH}" "${UNTAR_PAT_PATH}"
     if [ $? -ne 0 ]; then
       rm -rf "${UNTAR_PAT_PATH}"
-      return 1
+      break
     fi
     if [ ! -f "${UNTAR_PAT_PATH}/GRUB_VER" -o ! -f "${UNTAR_PAT_PATH}/VERSION" ]; then
       echo -e "$(TEXT "pat Invalid, try again!")" >"${LOG_FILE}"
@@ -499,6 +498,9 @@ function ParsePat() {
     rm -f "${ORI_ZIMAGE_FILE}" "${ORI_RDGZ_FILE}" "${MOD_ZIMAGE_FILE}" "${MOD_RDGZ_FILE}" >/dev/null 2>&1 || true
     rm -f "${PART1_PATH}/grub_cksum.syno" "${PART1_PATH}/GRUB_VER" "${PART2_PATH}/"* >/dev/null 2>&1 || true
     touch ${PART1_PATH}/.build
+    rm -f "${LOG_FILE}"
+    echo "$(TEXT "Ready!")"
+    sleep 3
     break
   done 2>&1 | DIALOG --title "$(TEXT "Main menu")" \
     --progressbox "$(TEXT "Making ...")" 20 100
@@ -1161,6 +1163,9 @@ function extractPatFiles() {
     # Uses the extractor to untar pat file
     echo "$(TEXT "Extracting ...")"
     LD_LIBRARY_PATH=${EXTRACTOR_PATH} "${EXTRACTOR_PATH}/${EXTRACTOR_BIN}" "${PAT_PATH}" "${EXT_PATH}" >"${LOG_FILE}" 2>&1
+    if [ $? -ne 0 ]; then
+      return 1
+    fi
   else
     echo "$(TEXT "Extracting ...")"
     tar -xf "${PAT_PATH}" -C "${EXT_PATH}" >"${LOG_FILE}" 2>&1
@@ -1176,6 +1181,8 @@ function extractPatFiles() {
     echo -e "$(TEXT "pat Invalid, try again!")" >"${LOG_FILE}"
     return 1
   fi
+  rm -f "${LOG_FILE}"
+  return 0
 }
 
 ###############################################################################
@@ -1728,14 +1735,15 @@ function formatDisks() {
 function tryRecoveryDSM() {
   DIALOG --title "$(TEXT "Try recovery DSM")" \
     --infobox "$(TEXT "Trying to recovery a installed DSM system ...")" 0 0
-  if [ -z "$(ls /dev/md/*:0 2>/dev/null)" ]; then # SynologyNAS:0, DiskStation:0, SynologyNVR:0, BeeStation:0
+  DSMROOTS="$(findDSMRoot)"
+  if [ -z "${DSMROOTS}" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "No DSM system partition(md0) found!\nPlease insert all disks before continuing.")" 0 0
     return
   fi
 
   mkdir -p "${TMP_PATH}/mdX"
-  mount "$(ls /dev/md/*:0 2>/dev/null | head -n 1)" "${TMP_PATH}/mdX"
+  mount "$(echo "${DSMROOTS}" | head -n 1 | cut -d' ' -f1)" "${TMP_PATH}/mdX"
   if [ $? -ne 0 ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "mount DSM system partition(md0) failed!\nPlease insert all disks before continuing.")" 0 0
@@ -1904,22 +1912,24 @@ function allowDSMDowngrade() {
   DIALOG --title "$(TEXT "Advanced")" \
     --yesno "${MSG}" 0 0
   [ $? -ne 0 ] && return
-  if [ -z "$(ls /dev/md/*:0 2>/dev/null)" ]; then # SynologyNAS:0, DiskStation:0, SynologyNVR:0, BeeStation:0
+  DSMROOTS="$(findDSMRoot)"
+  if [ -z "${DSMROOTS}" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "No DSM system partition(md0) found!\nPlease insert all disks before continuing.")" 0 0
     return
   fi
-  while true; do
+  (
     mkdir -p "${TMP_PATH}/mdX"
-    mount "$(ls /dev/md/*:0 2>/dev/null | head -n 1)" "${TMP_PATH}/mdX"
-    [ $? -ne 0 ] && break
-    [ -f "${TMP_PATH}/mdX/etc/VERSION" ] && rm -f "${TMP_PATH}/mdX/etc/VERSION"
-    [ -f "${TMP_PATH}/mdX/etc.defaults/VERSION" ] && rm -f "${TMP_PATH}/mdX/etc.defaults/VERSION"
-    sync
-    umount "${TMP_PATH}/mdX"
+    for I in ${DSMROOTS}; do
+      mount "${I}" "${TMP_PATH}/mdX"
+      [ $? -ne 0 ] && continue
+      [ -f "${TMP_PATH}/mdX/etc/VERSION" ] && rm -f "${TMP_PATH}/mdX/etc/VERSION"
+      [ -f "${TMP_PATH}/mdX/etc.defaults/VERSION" ] && rm -f "${TMP_PATH}/mdX/etc.defaults/VERSION"
+      sync
+      umount "${TMP_PATH}/mdX"
+    done
     rm -rf "${TMP_PATH}/mdX"
-    break
-  done 2>&1 | DIALOG --title "$(TEXT "Advanced")" \
+  ) 2>&1 | DIALOG --title "$(TEXT "Advanced")" \
     --progressbox "$(TEXT "Removing ...")" 20 100
   DIALOG --title "$(TEXT "Advanced")" \
     --msgbox "$(TEXT "Remove VERSION file for DSM system partition(md0) completed.")" 0 0
@@ -1929,16 +1939,17 @@ function allowDSMDowngrade() {
 ###############################################################################
 # Reset DSM system password
 function resetDSMPassword() {
-  if [ -z "$(ls /dev/md/*:0 2>/dev/null)" ]; then # SynologyNAS:0, DiskStation:0, SynologyNVR:0, BeeStation:0
+  DSMROOTS="$(findDSMRoot)"
+  if [ -z "${DSMROOTS}" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "No DSM system partition(md0) found!\nPlease insert all disks before continuing.")" 0 0
     return
   fi
   rm -f "${TMP_PATH}/menu"
-  while true; do
-    mkdir -p "${TMP_PATH}/mdX"
-    mount "$(ls /dev/md/*:0 2>/dev/null | head -n 1)" "${TMP_PATH}/mdX"
-    [ $? -ne 0 ] && break
+  mkdir -p "${TMP_PATH}/mdX"
+  for I in ${DSMROOTS}; do
+    mount ${I} "${TMP_PATH}/mdX"
+    [ $? -ne 0 ] && continue
     if [ -f "${TMP_PATH}/mdX/etc/shadow" ]; then
       while read L; do
         U=$(echo "${L}" | awk -F ':' '{if ($2 != "*" && $2 != "!!") print $1;}')
@@ -1950,9 +1961,9 @@ function resetDSMPassword() {
       done <<<$(cat "${TMP_PATH}/mdX/etc/shadow" 2>/dev/null)
     fi
     umount "${TMP_PATH}/mdX"
-    rm -rf "${TMP_PATH}/mdX"
-    break
+    [ -f "${TMP_PATH}/menu" ] && break
   done
+  rm -rf "${TMP_PATH}/mdX"
   if [ ! -f "${TMP_PATH}/menu" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "All existing users have been disabled. Please try adding new user.")" 0 0
@@ -1975,21 +1986,22 @@ function resetDSMPassword() {
       --msgbox "$(TEXT "Invalid password")" 0 0
   done
   NEWPASSWD="$(python -c "from passlib.hash import sha512_crypt;pw=\"${VALUE}\";print(sha512_crypt.using(rounds=5000).hash(pw))")"
-  while true; do
+  (
     mkdir -p "${TMP_PATH}/mdX"
-    mount "$(ls /dev/md/*:0 2>/dev/null | head -n 1)" "${TMP_PATH}/mdX"
-    [ $? -ne 0 ] && break
-    OLDPASSWD="$(cat "${TMP_PATH}/mdX/etc/shadow" 2>/dev/null | grep "^${USER}:" | awk -F ':' '{print $2}')"
-    if [ -n "${NEWPASSWD}" -a -n "${OLDPASSWD}" ]; then
-      sed -i "s|${OLDPASSWD}|${NEWPASSWD}|g" "${TMP_PATH}/mdX/etc/shadow"
-      sed -i "/^${USER}:/ s/\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\)/\1:\2:\3:\4:\5:\6:\7::\9/" "${TMP_PATH}/mdX/etc/shadow"
-    fi
-    sed -i "s|status=on|status=off|g" "${TMP_PATH}/mdX/usr/syno/etc/packages/SecureSignIn/preference/${USER}/method.config" 2>/dev/null
-    sync
-    umount "${TMP_PATH}/mdX"
+    for I in ${DSMROOTS}; do
+      mount "${I}" "${TMP_PATH}/mdX"
+      [ $? -ne 0 ] && continue
+      OLDPASSWD="$(cat "${TMP_PATH}/mdX/etc/shadow" 2>/dev/null | grep "^${USER}:" | awk -F ':' '{print $2}')"
+      if [ -n "${NEWPASSWD}" -a -n "${OLDPASSWD}" ]; then
+        sed -i "s|${OLDPASSWD}|${NEWPASSWD}|g" "${TMP_PATH}/mdX/etc/shadow"
+        sed -i "/^${USER}:/ s/\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\):\([^:]*\)/\1:\2:\3:\4:\5:\6:\7::\9/" "${TMP_PATH}/mdX/etc/shadow"
+      fi
+      sed -i "s|status=on|status=off|g" "${TMP_PATH}/mdX/usr/syno/etc/packages/SecureSignIn/preference/${USER}/method.config" 2>/dev/null
+      sync
+      umount "${TMP_PATH}/mdX"
+    done
     rm -rf "${TMP_PATH}/mdX"
-    break
-  done 2>&1 | DIALOG --title "$(TEXT "Advanced")" \
+  ) 2>&1 | DIALOG --title "$(TEXT "Advanced")" \
     --progressbox "$(TEXT "Resetting ...")" 20 100
   DIALOG --title "$(TEXT "Advanced")" \
     --msgbox "$(TEXT "Password reset completed.")" 0 0
@@ -1999,7 +2011,8 @@ function resetDSMPassword() {
 ###############################################################################
 # Reset DSM system password
 function addNewDSMUser() {
-  if [ -z "$(ls /dev/md/*:0 2>/dev/null)" ]; then # SynologyNAS:0, DiskStation:0, SynologyNVR:0, BeeStation:0
+  DSMROOTS="$(findDSMRoot)"
+  if [ -z "${DSMROOTS}" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "No DSM system partition(md0) found!\nPlease insert all disks before continuing.")" 0 0
     return
@@ -2016,10 +2029,11 @@ function addNewDSMUser() {
     ONBOOTUP="${ONBOOTUP}if synouser --enum local | grep -q ^${username}\$; then synouser --setpw ${username} ${password}; else synouser --add ${username} ${password} rr 0 user@rr.com 1; fi\n"
     ONBOOTUP="${ONBOOTUP}synogroup --member administrators ${username}\n"
     ONBOOTUP="${ONBOOTUP}echo \"DELETE FROM task WHERE task_name LIKE ''RRONBOOTUPRR_ADDUSER'';\" | sqlite3 /usr/syno/etc/esynoscheduler/esynoscheduler.db\n"
-    while true; do
-      mkdir -p "${TMP_PATH}/mdX"
-      mount "$(ls /dev/md/*:0 2>/dev/null | head -n 1)" "${TMP_PATH}/mdX"
-      [ $? -ne 0 ] && break
+
+    mkdir -p "${TMP_PATH}/mdX"
+    for I in ${DSMROOTS}; do
+      mount "${I}" "${TMP_PATH}/mdX"
+      [ $? -ne 0 ] && continue
       if [ -f "${TMP_PATH}/mdX/usr/syno/etc/esynoscheduler/esynoscheduler.db" ]; then
         sqlite3 ${TMP_PATH}/mdX/usr/syno/etc/esynoscheduler/esynoscheduler.db <<EOF
 DELETE FROM task WHERE task_name LIKE 'RRONBOOTUPRR_ADDUSER';
@@ -2030,9 +2044,8 @@ EOF
         echo "true" >${TMP_PATH}/isEnable
       fi
       umount "${TMP_PATH}/mdX"
-      rm -rf "${TMP_PATH}/mdX"
-      break
     done
+    rm -rf "${TMP_PATH}/mdX"
   ) 2>&1 | DIALOG --title "$(TEXT "Advanced")" \
     --progressbox "$(TEXT "Adding ...")" 20 100
   [ "$(cat ${TMP_PATH}/isEnable 2>/dev/null)" = "true" ] && MSG="$(TEXT "User added successfully.")" || MSG="$(TEXT "User add failed.")"
@@ -2044,7 +2057,8 @@ EOF
 ###############################################################################
 # Force enable Telnet&SSH of DSM system
 function forceEnableDSMTelnetSSH() {
-  if [ -z "$(ls /dev/md/*:0 2>/dev/null)" ]; then # SynologyNAS:0, DiskStation:0, SynologyNVR:0, BeeStation:0
+  DSMROOTS="$(findDSMRoot)"
+  if [ -z "${DSMROOTS}" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "No DSM system partition(md0) found!\nPlease insert all disks before continuing.")" 0 0
     return
@@ -2053,10 +2067,10 @@ function forceEnableDSMTelnetSSH() {
     ONBOOTUP=""
     ONBOOTUP="${ONBOOTUP}synowebapi --exec api=SYNO.Core.Terminal method=set version=3 enable_telnet=true enable_ssh=true ssh_port=22 forbid_console=false\n"
     ONBOOTUP="${ONBOOTUP}echo \"DELETE FROM task WHERE task_name LIKE ''RRONBOOTUPRR_SSH'';\" | sqlite3 /usr/syno/etc/esynoscheduler/esynoscheduler.db\n"
-    while true; do
-      mkdir -p "${TMP_PATH}/mdX"
-      mount "$(ls /dev/md/*:0 2>/dev/null | head -n 1)" "${TMP_PATH}/mdX"
-      [ $? -ne 0 ] && break
+    mkdir -p "${TMP_PATH}/mdX"
+    for I in ${DSMROOTS}; do
+      mount "${I}" "${TMP_PATH}/mdX"
+      [ $? -ne 0 ] && continue
       if [ -f "${TMP_PATH}/mdX/usr/syno/etc/esynoscheduler/esynoscheduler.db" ]; then
         sqlite3 ${TMP_PATH}/mdX/usr/syno/etc/esynoscheduler/esynoscheduler.db <<EOF
 DELETE FROM task WHERE task_name LIKE 'RRONBOOTUPRR_SSH';
@@ -2067,9 +2081,8 @@ EOF
         echo "true" >${TMP_PATH}/isEnable
       fi
       umount "${TMP_PATH}/mdX"
-      rm -rf "${TMP_PATH}/mdX"
-      break
     done
+    rm -rf "${TMP_PATH}/mdX"
   ) 2>&1 | DIALOG --title "$(TEXT "Advanced")" \
     --progressbox "$(TEXT "Enabling ...")" 20 100
   [ "$(cat ${TMP_PATH}/isEnable 2>/dev/null)" = "true" ] && MSG="$(TEXT "Enabled Telnet&SSH successfully.")" || MSG="$(TEXT "Enabled Telnet&SSH failed.")"
@@ -2087,21 +2100,23 @@ function removeBlockIPDB {
   DIALOG --title "$(TEXT "Advanced")" \
     --yesno "${MSG}" 0 0
   [ $? -ne 0 ] && return
-  if [ -z "$(ls /dev/md/*:0 2>/dev/null)" ]; then # SynologyNAS:0, DiskStation:0, SynologyNVR:0, BeeStation:0
+  DSMROOTS="$(findDSMRoot)"
+  if [ -z "${DSMROOTS}" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "No DSM system partition(md0) found!\nPlease insert all disks before continuing.")" 0 0
     return
   fi
-  while true; do
+  (
     mkdir -p "${TMP_PATH}/mdX"
-    mount "$(ls /dev/md/*:0 2>/dev/null | head -n 1)" "${TMP_PATH}/mdX"
-    [ $? -ne 0 ] && break
-    [ -f "${TMP_PATH}/mdX/etc/synoautoblock.db" ] && rm -f "${TMP_PATH}/mdX/etc/synoautoblock.db"
-    sync
-    umount "${TMP_PATH}/mdX"
+    for I in ${DSMROOTS}; do
+      mount "${I}" "${TMP_PATH}/mdX"
+      [ $? -ne 0 ] && continue
+      [ -f "${TMP_PATH}/mdX/etc/synoautoblock.db" ] && rm -f "${TMP_PATH}/mdX/etc/synoautoblock.db"
+      sync
+      umount "${TMP_PATH}/mdX"
+    done
     rm -rf "${TMP_PATH}/mdX"
-    break
-  done 2>&1 | DIALOG --title "$(TEXT "Advanced")" \
+  ) 2>&1 | DIALOG --title "$(TEXT "Advanced")" \
     --progressbox "$(TEXT "Removing ...")" 20 100
   MSG="$(TEXT "The blocked ip database has been deleted.")"
   DIALOG --title "$(TEXT "Advanced")" \
@@ -2686,7 +2701,7 @@ function downloadExts() {
   else
     MSG=""
     MSG+="Latest: ${TAG}\n\n"
-    MSG+="$(curl -skL --connect-timeout 10 "${PROXY}${3}/releases/tag/${TAG}" | pup 'div[data-test-selector="body-content"]' | html2text -utf8)\n\n"
+    MSG+="$(curl -skL --connect-timeout 10 "${PROXY}${3}/releases/tag/${TAG}" | pup 'div[data-test-selector="body-content"]' | html2text --ignore-links --ignore-images)\n\n"
     MSG+="$(TEXT "Do you want to update?")"
     if [ "${5}" = "-1" ]; then
       echo "${T} - ${MSG}"
@@ -2699,35 +2714,35 @@ function downloadExts() {
         --infobox "$(echo -e "${MSG}")" 0 0
     fi
   fi
+  function __download() {
+    rm -f ${TMP_PATH}/${4}*.zip
+    touch "${TMP_PATH}/${4}-${TAG}.zip.downloading"
+    STATUS=$(curl -kL --connect-timeout 10 -w "%{http_code}" "${PROXY}${3}/releases/download/${TAG}/${4}-${TAG}.zip" -o "${TMP_PATH}/${4}-${TAG}.zip")
+    RET=$?
+    rm -f "${TMP_PATH}/${4}-${TAG}.zip.downloading"
+    if [ ${RET} -ne 0 -o ${STATUS:-0} -ne 200 ]; then
+      rm -f "${TMP_PATH}/${4}-${TAG}.zip"
+      MSG="$(printf "$(TEXT "Error downloading new version.\nError: %d:%d\n(Please via https://curl.se/libcurl/c/libcurl-errors.html check error description.)")" "${RET}" "${STATUS}")"
+      echo -e "${MSG}" >"${LOG_FILE}"
+    fi
+    return 0
+  }
+  rm -f "${LOG_FILE}"
   if [ "${5}" = "-1" ]; then
-    (
-      rm -f ${TMP_PATH}/${4}*.zip
-      touch "${TMP_PATH}/${4}-${TAG}.zip.downloading"
-      STATUS=$(curl -kL --connect-timeout 10 -w "%{http_code}" "${PROXY}${3}/releases/download/${TAG}/${4}-${TAG}.zip" -o "${TMP_PATH}/${4}-${TAG}.zip")
-      RET=$?
-      rm -f "${TMP_PATH}/${4}-${TAG}.zip.downloading"
-    ) 2>&1
+    __download $@ 2>&1
   else
-    (
-      rm -f ${TMP_PATH}/${4}*.zip
-      touch "${TMP_PATH}/${4}-${TAG}.zip.downloading"
-      STATUS=$(curl -kL --connect-timeout 10 -w "%{http_code}" "${PROXY}${3}/releases/download/${TAG}/${4}-${TAG}.zip" -o "${TMP_PATH}/${4}-${TAG}.zip")
-      RET=$?
-      rm -f "${TMP_PATH}/${4}-${TAG}.zip.downloading"
-    ) 2>&1 | DIALOG --title "${T}" \
+    __download $@ 2>&1 | DIALOG --title "${T}" \
       --progressbox "$(TEXT "Downloading ...")" 20 100
   fi
-  if [ ${RET} -ne 0 -o ${STATUS:-0} -ne 200 ]; then
-    rm -f "${TMP_PATH}/${4}-${TAG}.zip"
-    MSG="$(printf "$(TEXT "Error downloading new version.\nError: %d:%d\n(Please via https://curl.se/libcurl/c/libcurl-errors.html check error description.)")" "${RET}" "${STATUS}")"
+  if [ -f "${LOG_FILE}" ]; then
     if [ "${5}" = "-1" ]; then
-      echo "${T} - ${MSG}"
+      echo "${T} - $(cat "${LOG_FILE}")"
     elif [ "${5}" = "0" ]; then
       DIALOG --title "${T}" \
-        --msgbox "${MSG}" 0 0
+        --msgbox "$(cat "${LOG_FILE}")" 0 0
     else
       DIALOG --title "${T}" \
-        --infobox "${MSG}" 0 0
+        --infobox "$(cat "${LOG_FILE}")" 0 0
     fi
     return 1
   fi
