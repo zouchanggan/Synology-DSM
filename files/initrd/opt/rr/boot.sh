@@ -201,6 +201,7 @@ else
     COUNT=$((${COUNT} + 1))
     echo -n "."
     sleep 1
+    /etc/init.d/S41dhcpcd restart >/dev/null 2>&1 || true
   done
   echo "$(TEXT "Waiting IP.")"
   for N in ${ETHX}; do
@@ -223,7 +224,11 @@ else
       COUNT=$((${COUNT} + 1))
       IP="$(getIP ${N})"
       if [ -n "${IP}" ]; then
-        echo -en "\r${N}(${DRIVER}): $(printf "$(TEXT "Access \033[1;34mhttp://%s:5000\033[0m to connect the DSM via web.")" "${IP}")\n"
+        if [[ "${IP}" =~ ^169\.254\..* ]]; then
+          echo -en "\r${N}(${DRIVER}): $(TEXT "LINK LOCAL (No DHCP server detected.)")\n"
+        else
+          echo -en "\r${N}(${DRIVER}): $(printf "$(TEXT "Access \033[1;34mhttp://%s:5000\033[0m to connect the DSM via web.")" "${IP}")\n"
+        fi
         break
       fi
       echo -n "."
@@ -254,6 +259,7 @@ else
   DSMLOGO="$(readConfigKey "dsmlogo" "${USER_CONFIG_FILE}")"
   if [ "${DSMLOGO}" = "true" -a -c "/dev/fb0" ]; then
     IP="$(getIP)"
+    [[ "${IP}" =~ ^169\.254\..* ]] && IP=""
     [ -n "${IP}" ] && URL="http://${IP}:5000" || URL="http://find.synology.com/"
     python ${WORK_PATH}/include/functions.py makeqr -d "${URL}" -l "6" -o "${TMP_PATH}/qrcode_boot.png"
     [ -f "${TMP_PATH}/qrcode_boot.png" ] && echo | fbv -acufi "${TMP_PATH}/qrcode_boot.png" >/dev/null 2>/dev/null || true

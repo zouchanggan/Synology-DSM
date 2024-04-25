@@ -7,6 +7,10 @@
 
 name: Data
 on:
+  release:
+    types:
+      - created
+
   workflow_dispatch:
     inputs:
       push:
@@ -68,7 +72,7 @@ jobs:
           python scripts/func.py getmodules -w "rr/ws" -j "docs/modules.json" -x "docs/modules.xlsx"
 
       - name: Upload to Artifacts
-        if: success() && inputs.push == false
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: addons
@@ -78,9 +82,10 @@ jobs:
           retention-days: 5
 
       - name: Check and Push
-        if: success() && inputs.push == true
+        if: success() && (inputs.push == true || github.event.action == 'created')
         run: |
             echo "Git push ..."
+            git checkout main
             git pull
             status=$(git status -s | grep -E "docs" | awk '{printf " %s", $2}')
             if [ -n "${status}" ]; then
