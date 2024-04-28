@@ -869,6 +869,9 @@ function cmdlineMenu() {
       MSG+="$(TEXT " * \Z4ahci_remap=4>5:5>8:12>16\Zn\n    Remap data port sequence.(Not apply to DT models.)\n")"
       MSG+="$(TEXT " * \Z4i915.enable_guc=2\Zn\n    Enable the GuC firmware on Intel graphics hardware.(value: 1,2 or 3)\n")"
       MSG+="$(TEXT " * \Z4i915.max_vfs=7\Zn\n    Set the maximum number of virtual functions (VFs) that can be created for Intel graphics hardware.\n")"
+      MSG+="$(TEXT " * \Z4i915.modeset=0\Zn\n    Disable the kernel mode setting (KMS) feature of the i915 driver.\n")"
+      MSG+="$(TEXT " * \Z4apparmor.mode=complain\Zn\n    Set the AppArmor security module to complain mode.\n")"
+      MSG+="$(TEXT " * \Z4apparmor=0\Zn\n    Disable the AppArmor security module.\n")"
       MSG+="$(TEXT " * \Z4consoleblank=300\Zn\n    Set the console to auto turnoff display 300 seconds after no activity (measured in seconds).\n")"
       MSG+="$(TEXT "\nEnter the parameter name and value you need to add.\n")"
       LINENUM=$(($(echo -e "${MSG}" | wc -l) + 10))
@@ -1102,6 +1105,7 @@ function getSynoExtractor() {
   if [ $? -ne 0 ]; then
     rm -f "${OLDPAT_PATH}"
     rm -rf "${RAMDISK_PATH}"
+    echo -e "$(TEXT "pat Invalid, try again!")" >"${LOG_FILE}"
     return 1
   fi
   rm -f "${OLDPAT_PATH}"
@@ -1151,6 +1155,7 @@ function extractPatFiles() {
   mkdir -p "${EXT_PATH}"
   echo -n "$(printf "$(TEXT "Disassembling %s: ")" "$(basename "${PAT_PATH}")")"
 
+  RET=0
   if [ "${isencrypted}" = "yes" ]; then
     EXTRACTOR_PATH="${PART3_PATH}/extractor"
     EXTRACTOR_BIN="syno_extract_system_patch"
@@ -1164,22 +1169,19 @@ function extractPatFiles() {
     # Uses the extractor to untar pat file
     echo "$(TEXT "Extracting ...")"
     LD_LIBRARY_PATH=${EXTRACTOR_PATH} "${EXTRACTOR_PATH}/${EXTRACTOR_BIN}" "${PAT_PATH}" "${EXT_PATH}" >"${LOG_FILE}" 2>&1
-    if [ $? -ne 0 ]; then
-      return 1
-    fi
+    RET=$?
   else
     echo "$(TEXT "Extracting ...")"
     tar -xf "${PAT_PATH}" -C "${EXT_PATH}" >"${LOG_FILE}" 2>&1
-    if [ $? -ne 0 ]; then
-      return 1
-    fi
+    RET=$?
   fi
 
-  if [ ! -f ${EXT_PATH}/grub_cksum.syno ] ||
+  if [ ${RET} -ne 0 ] ||
+    [ ! -f ${EXT_PATH}/grub_cksum.syno ] ||
     [ ! -f ${EXT_PATH}/GRUB_VER ] ||
     [ ! -f ${EXT_PATH}/zImage ] ||
     [ ! -f ${EXT_PATH}/rd.gz ]; then
-    echo -e "$(TEXT "pat Invalid, try again!")" >"${LOG_FILE}"
+    echo -e "$(TEXT "pat Invalid, try again!")\nError: ${RET}" >"${LOG_FILE}"
     return 1
   fi
   rm -f "${LOG_FILE}"
@@ -1694,7 +1696,7 @@ function formatDisks() {
     [ "${KNAME}" = "${LOADER_DISK}" -o "${PKNAME}" = "${LOADER_DISK}" ] && continue
     [ -z "${ID}" ] && ID="Unknown"
     echo "\"${KNAME}\" \"${ID}\" \"off\"" >>"${TMP_PATH}/opts"
-  done <<<$(lsblk -pno KNAME,ID,PKNAME)
+  done <<<$(lsblk -pno KNAME,ID,PKNAME | sort)
   if [ ! -f "${TMP_PATH}/opts" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "No disk found!")" 0 0
@@ -2134,7 +2136,7 @@ function cloneBootloaderDisk() {
     [ -z "${KNAME}" -o -z "${ID}" ] && continue
     [ "${KNAME}" = "${LOADER_DISK}" -o "${PKNAME}" = "${LOADER_DISK}" ] && continue
     echo "\"${KNAME}\" \"${ID}\" \"off\"" >>"${TMP_PATH}/opts"
-  done <<<$(lsblk -dpno KNAME,ID,PKNAME)
+  done <<<$(lsblk -dpno KNAME,ID,PKNAME | sort)
   if [ ! -f "${TMP_PATH}/opts" ]; then
     DIALOG --title "$(TEXT "Advanced")" \
       --msgbox "$(TEXT "No disk found!")" 0 0
