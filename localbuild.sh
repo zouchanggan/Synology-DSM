@@ -35,7 +35,7 @@ function create() {
 
   sudo apt update
   sudo apt install -y locales busybox dialog curl xz-utils cpio sed
-  sudo locale-gen de_DE.UTF-8 en_US.UTF-8 es_ES.UTF-8 fr_FR.UTF-8 ja_JP.UTF-8 ko_KR.UTF-8 ru_RU.UTF-8 uk_UA.UTF-8 vi_VN.UTF-8 zh_CN.UTF-8 zh_HK.UTF-8 zh_TW.UTF-8
+  sudo locale-gen ar_SA.UTF-8 de_DE.UTF-8 en_US.UTF-8 es_ES.UTF-8 fr_FR.UTF-8 ja_JP.UTF-8 ko_KR.UTF-8 ru_RU.UTF-8 th_TH.UTF-8 tr_TR.UTF-8 uk_UA.UTF-8 vi_VN.UTF-8 zh_CN.UTF-8 zh_HK.UTF-8 zh_TW.UTF-8
 
   YQ=$(command -v yq)
   if [ -z "${YQ}" ] || ! ${YQ} --version 2>/dev/null | grep -q "v4."; then
@@ -189,11 +189,11 @@ function pack() {
     exit 1
   )
   sudo mount ${LOOPX}p2 "/tmp/mnt/p2" || (
-    echo -e "Can't mount ${LOOPX}p1."
+    echo -e "Can't mount ${LOOPX}p2."
     exit 1
   )
   sudo mount ${LOOPX}p3 "/tmp/mnt/p3" || (
-    echo -e "Can't mount ${LOOPX}p1."
+    echo -e "Can't mount ${LOOPX}p3."
     exit 1
   )
 
@@ -204,11 +204,11 @@ function pack() {
     exit 1
   )
   sudo cp -rf "${CHROOT_PATH}/mnt/p2/"* "/tmp/mnt/p2" || (
-    echo -e "Can't cp ${LOOPX}p1."
+    echo -e "Can't cp ${LOOPX}p2."
     exit 1
   )
   sudo cp -rf "${CHROOT_PATH}/mnt/p3/"* "/tmp/mnt/p3" || (
-    echo -e "Can't cp ${LOOPX}p1."
+    echo -e "Can't cp ${LOOPX}p3."
     exit 1
   )
   sudo sync

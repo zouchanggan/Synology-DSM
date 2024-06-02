@@ -1,4 +1,5 @@
-RR_VERSION="24.4.7"
+RR_VERSION="24.6.0"
+RR_RELEASE=""
 RR_TITLE="RR v${RR_VERSION}"
 
 # Define paths

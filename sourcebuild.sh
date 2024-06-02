@@ -7,7 +7,7 @@
 #
 # sudo apt update
 # sudo apt install -y locales busybox dialog curl xz-utils cpio sed
-# sudo locale-gen de_DE.UTF-8 en_US.UTF-8 es_ES.UTF-8 fr_FR.UTF-8 ja_JP.UTF-8 ko_KR.UTF-8 ru_RU.UTF-8 uk_UA.UTF-8 vi_VN.UTF-8 zh_CN.UTF-8 zh_HK.UTF-8 zh_TW.UTF-8
+# sudo locale-gen ar_SA.UTF-8 de_DE.UTF-8 en_US.UTF-8 es_ES.UTF-8 fr_FR.UTF-8 ja_JP.UTF-8 ko_KR.UTF-8 ru_RU.UTF-8 th_TH.UTF-8 tr_TR.UTF-8 uk_UA.UTF-8 vi_VN.UTF-8 zh_CN.UTF-8 zh_HK.UTF-8 zh_TW.UTF-8
 #
 # export TOKEN="${1}"
 #
@@ -37,26 +37,16 @@ convertpo2mo "files/initrd/opt/rr/lang"
 repackInitrd "files/p3/initrd-rr" "files/initrd"
 
 if [ -n "${1}" ]; then
-  if echo "$(
-    cd "files/initrd/opt/rr/model-configs" 2>/dev/null
-    ls *.yml 2>/dev/null | cut -d'.' -f1
-  )" | grep -q "${1}"; then
-    echo "Model found: ${1}"
-    export LOADER_DISK="LOCALBUILD"
-    export CHROOT_PATH="$(realpath files)"
-    (
-      cd "${CHROOT_PATH}/initrd/opt/rr"
-      # sed -i 's/rd-compressed:.*$/rd-compressed: true/g' "model-configs/${1}.yml"
-      ./init.sh
-      ./menu.sh modelMenu "${1}"
-      ./menu.sh productversMenu "7.2"
-      ./menu.sh make -1
-      ./menu.sh cleanCache -1
-    )
-  else
-    echo "Model not found: ${1}"
-    exit 1
-  fi
+  export LOADER_DISK="LOCALBUILD"
+  export CHROOT_PATH="$(realpath files)"
+  (
+    cd "${CHROOT_PATH}/initrd/opt/rr"
+    ./init.sh
+    ./menu.sh modelMenu "${1}"
+    ./menu.sh productversMenu "7.2"
+    ./menu.sh make -1
+    ./menu.sh cleanCache -1
+  )
 fi
 
 IMAGE_FILE="rr.img"

@@ -11,7 +11,7 @@ set -e
 # Shows title
 clear
 [ -z "${COLUMNS}" ] && COLUMNS=50
-TITLE="$(printf "$(TEXT "Welcome to %s")" "${RR_TITLE}")"
+TITLE="$(printf "$(TEXT "Welcome to %s")" "$([ -z "${RR_RELEASE}" ] && echo "${RR_TITLE}" || echo "${RR_TITLE}(${RR_RELEASE})")")"
 printf "\033[1;44m%*s\n" ${COLUMNS} ""
 printf "\033[1;44m%*s\033[A\n" ${COLUMNS} ""
 printf "\033[1;32m%*s\033[0m\n" $(((${#TITLE} + ${COLUMNS}) / 2)) "${TITLE}"
@@ -28,6 +28,8 @@ if [ ! -f "${USER_CONFIG_FILE}" ]; then
 fi
 
 initConfigKey "kernel" "official" "${USER_CONFIG_FILE}"
+initConfigKey "rd-compressed" "false" "${USER_CONFIG_FILE}"
+initConfigKey "satadom" "2" "${USER_CONFIG_FILE}"
 initConfigKey "lkm" "prod" "${USER_CONFIG_FILE}"
 initConfigKey "dsmlogo" "true" "${USER_CONFIG_FILE}"
 initConfigKey "directboot" "false" "${USER_CONFIG_FILE}"
@@ -39,7 +41,9 @@ initConfigKey "kernelpanic" "5" "${USER_CONFIG_FILE}"
 initConfigKey "odp" "false" "${USER_CONFIG_FILE}"
 initConfigKey "hddsort" "false" "${USER_CONFIG_FILE}"
 initConfigKey "emmcboot" "false" "${USER_CONFIG_FILE}"
+initConfigKey "platform" "" "${USER_CONFIG_FILE}"
 initConfigKey "model" "" "${USER_CONFIG_FILE}"
+initConfigKey "modelid" "" "${USER_CONFIG_FILE}"
 initConfigKey "productver" "" "${USER_CONFIG_FILE}"
 initConfigKey "buildnum" "" "${USER_CONFIG_FILE}"
 initConfigKey "smallnum" "" "${USER_CONFIG_FILE}"
@@ -48,7 +52,6 @@ initConfigKey "patsum" "" "${USER_CONFIG_FILE}"
 initConfigKey "sn" "" "${USER_CONFIG_FILE}"
 initConfigKey "mac1" "" "${USER_CONFIG_FILE}"
 initConfigKey "mac2" "" "${USER_CONFIG_FILE}"
-# initConfigKey "maxdisks" "" "${USER_CONFIG_FILE}"
 initConfigKey "layout" "qwerty" "${USER_CONFIG_FILE}"
 initConfigKey "keymap" "" "${USER_CONFIG_FILE}"
 initConfigKey "zimage-hash" "" "${USER_CONFIG_FILE}"
@@ -61,9 +64,22 @@ initConfigKey "addons.mountloader" "" "${USER_CONFIG_FILE}"
 initConfigKey "addons.reboottoloader" "" "${USER_CONFIG_FILE}"
 initConfigKey "modules" "{}" "${USER_CONFIG_FILE}"
 
-if [ ! "LOCALBUILD" = "${LOADER_DISK}" ]; then
-  # _sort_netif "$(readConfigKey "addons.sortnetif" "${USER_CONFIG_FILE}")"
+# for update
+if [ -f "${PART2_PATH}/GRUB_VER" ]; then
+  PLATFORMTMP="$(_get_conf_kv "PLATFORM" "${PART2_PATH}/GRUB_VER")"
+  MODELTMP="$(_get_conf_kv "MODEL" "${PART2_PATH}/GRUB_VER")"
+  [ -z "$(readConfigKey "platform" "${USER_CONFIG_FILE}")" ] &&
+    writeConfigKey "platform" "${PLATFORMTMP,,}" "${USER_CONFIG_FILE}"
+  [ -z "$(readConfigKey "model" "${USER_CONFIG_FILE}")" ] &&
+    writeConfigKey "model" "$(echo ${MODELTMP} | sed 's/d$/D/; s/rp$/RP/; s/rp+/RP+/')" "${USER_CONFIG_FILE}"
+  [ -z "$(readConfigKey "modelid" "${USER_CONFIG_FILE}")" ] &&
+    writeConfigKey "modelid" "${MODELTMP}" "${USER_CONFIG_FILE}"
+fi
 
+if [ ! "LOCALBUILD" = "${LOADER_DISK}" ]; then
+  if arrayExistItem "sortnetif:" $(readConfigMap "addons" "${USER_CONFIG_FILE}"); then
+    _sort_netif "$(readConfigKey "addons.sortnetif" "${USER_CONFIG_FILE}")"
+  fi
   for ETH in ${ETHX}; do
     [ "${ETH::4}" = "wlan" ] && connectwlanif "${ETH}" && sleep 1
     MACR="$(cat /sys/class/net/${ETH}/address 2>/dev/null | sed 's/://g')"
@@ -140,7 +156,7 @@ while [ ${COUNT} -lt 30 ]; do
     fi
   done
   if [ -n "${MSG}" ]; then
-    echo -en "\r${MSG}$(TEXT "connected.")\n"
+    echo -en "\r${MSG}$(TEXT "connected.")                  \n"
     break
   fi
   COUNT=$((${COUNT} + 1))
@@ -150,7 +166,6 @@ done
 echo "$(TEXT "Waiting IP.")"
 for N in ${ETHX}; do
   COUNT=0
-  /etc/init.d/S41dhcpcd restart >/dev/null 2>&1 || true
   DRIVER=$(ls -ld /sys/class/net/${N}/device/driver 2>/dev/null | awk -F '/' '{print $NF}')
   echo -en "${N}(${DRIVER}): "
   while true; do
